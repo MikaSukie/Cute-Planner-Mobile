@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Cute Planner Mobile</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Arial', sans-serif;
+      background: #10101a;
+      color: white;
+      overflow-x: hidden;
+      touch-action: manipulation;
+    }
+
+    .toolbar {
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+      display: flex;
+      justify-content: space-around;
+      background: #1f1f2e;
+      padding: 10px;
+      z-index: 100;
+    }
+
+    .toolbar button {
+      flex: 1;
+      margin: 0 5px;
+      padding: 12px;
+      font-size: 16px;
+      border-radius: 8px;
+    }
+
+    .node {
+      position: absolute;
+      background: #2c2c40;
+      border-radius: 12px;
+      padding: 12px;
+      min-width: 120px;
+      max-width: 200px;
+      box-shadow: 0 0 8px #8884ff;
+      color: white;
+      cursor: move;
+      user-select: none;
+      overflow-wrap: break-word;
+    }
+
+    .content {
+      outline: none;
+    }
+
+    .connector {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      background: #ff44ff;
+      border-radius: 9999px;
+      top: 50%;
+      right: -6px;
+      transform: translateY(-50%);
+    }
+
+    svg path {
+      stroke: rgba(255, 255, 255, 0.4);
+      stroke-width: 3;
+      fill: none;
+    }
+  </style>
+</head>
+<body>
+  <svg id="canvas" style="position:absolute;top:0;left:0;z-index:0;"></svg>
+  <div id="nodeContainer"></div>
+
+  <div class="toolbar">
+    <button id="addNode" class="bg-pink-500 text-white">➕ Add</button>
+    <button id="exportBtn" class="bg-green-500 text-white">⬇️ Save</button>
+    <button id="importBtn" class="bg-yellow-500 text-black">⬆️ Load</button>
+    <input type="file" id="importInput" hidden />
+  </div>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const nodeContainer = document.getElementById("nodeContainer");
+    const nodes = [];
+    const connections = [];
+    let draggingLine = null, startConnector = null;
+
+    function createNode(content = "New Node", top = 80, left = 80) {
+      const node = document.createElement("div");
+      node.className = "node";
+      node.style.top = top + "px";
+      node.style.left = left + "px";
+      node.contentEditable = true;
+      node.innerText = content;
+
+      const connector = document.createElement("div");
+      connector.className = "connector";
+      node.appendChild(connector);
+
+      nodeContainer.appendChild(node);
+      nodes.push(node);
+      makeDraggable(node);
+      return node;
+    }
+
+    function makeDraggable(el) {
+      let offsetX, offsetY, isDragging = false;
+      el.addEventListener("touchstart", (e) => {
+        const touch = e.touches[0];
+        offsetX = touch.clientX - el.offsetLeft;
+        offsetY = touch.clientY - el.offsetTop;
+        isDragging = true;
+      });
+
+      document.addEventListener("touchmove", (e) => {
+        if (isDragging) {
+          const touch = e.touches[0];
+          el.style.left = touch.clientX - offsetX + "px";
+          el.style.top = touch.clientY - offsetY + "px";
+          drawLines();
+        }
+      });
+
+      document.addEventListener("touchend", () => isDragging = false);
+
+      el.querySelector(".connector").addEventListener("touchstart", (e) => {
+        e.stopPropagation();
+        startConnector = e.target;
+        draggingLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        canvas.appendChild(draggingLine);
+      });
+    }
+
+    document.addEventListener("touchmove", (e) => {
+      if (!draggingLine || !startConnector) return;
+      const touch = e.touches[0];
+      const r = startConnector.getBoundingClientRect();
+      const x1 = r.left + 6 + window.scrollX;
+      const y1 = r.top + 6 + window.scrollY;
+      const x2 = touch.clientX + window.scrollX;
+      const y2 = touch.clientY + window.scrollY;
+      draggingLine.setAttribute("d", `M${x1},${y1} C${x1+50},${y1} ${x2-50},${y2} ${x2},${y2}`);
+    });
+
+    document.addEventListener("touchend", (e) => {
+      if (!draggingLine || !startConnector) return;
+      const endConnector = document.elementFromPoint(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      if (endConnector?.classList.contains("connector")) {
+        connections.push([startConnector, endConnector]);
+      }
+      draggingLine.remove();
+      draggingLine = null;
+      startConnector = null;
+      drawLines();
+    });
+
+    function drawLines() {
+      canvas.innerHTML = "";
+      connections.forEach(([a, b]) => {
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        const x1 = ra.left + 6 + window.scrollX;
+        const y1 = ra.top + 6 + window.scrollY;
+        const x2 = rb.left + 6 + window.scrollX;
+        const y2 = rb.top + 6 + window.scrollY;
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", `M${x1},${y1} C${x1 + 40},${y1} ${x2 - 40},${y2} ${x2},${y2}`);
+        canvas.appendChild(path);
+      });
+    }
+
+    document.getElementById("addNode").onclick = () => createNode();
+    document.getElementById("exportBtn").onclick = () => {
+      const data = JSON.stringify(nodes.map(n => ({
+        text: n.innerText,
+        top: n.offsetTop,
+        left: n.offsetLeft
+      })));
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "planner.json";
+      a.click();
+    };
+
+    document.getElementById("importBtn").onclick = () => {
+      document.getElementById("importInput").click();
+    };
+
+    document.getElementById("importInput").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const data = JSON.parse(event.target.result);
+        nodes.forEach(n => n.remove());
+        nodes.length = 0;
+        canvas.innerHTML = "";
+        data.forEach(n => createNode(n.text, n.top, n.left));
+      };
+      reader.readAsText(file);
+    });
+  </script>
+</body>
+</html>

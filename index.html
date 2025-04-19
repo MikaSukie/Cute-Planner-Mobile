@@ -61,9 +61,6 @@
       background: #ff66cc;
       border: 2px solid white;
       border-radius: 9999px;
-      top: 50%;
-      right: -8px;
-      transform: translateY(-50%);
       z-index: 2;
       contenteditable: false;
       transition: box-shadow 0.3s ease;
@@ -71,6 +68,30 @@
 
     .connector:active {
       box-shadow: 0 0 12px 3px #ff66cc;
+    }
+
+    .connector-top {
+      top: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .connector-right {
+      top: 50%;
+      right: -8px;
+      transform: translateY(-50%);
+    }
+
+    .connector-bottom {
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .connector-left {
+      top: 50%;
+      left: -8px;
+      transform: translateY(-50%);
     }
 
     .delete-btn {
@@ -143,20 +164,23 @@
       contentDiv.innerText = content;
       node.appendChild(contentDiv);
 
-      const connector = document.createElement("div");
-      connector.className = "connector";
-      connector.setAttribute("contenteditable", "false");
-      connector.addEventListener("click", (e) => {
-        e.stopPropagation();
-        // Delete connections where this connector is involved
-        for (let i = connections.length - 1; i >= 0; i--) {
-          if (connections[i][0] === connector || connections[i][1] === connector) {
-            connections.splice(i, 1);
+      ["top", "right", "bottom", "left"].forEach(pos => {
+        const connector = document.createElement("div");
+        connector.className = `connector connector-${pos}`;
+        connector.setAttribute("contenteditable", "false");
+
+        connector.addEventListener("click", (e) => {
+          e.stopPropagation();
+          for (let i = connections.length - 1; i >= 0; i--) {
+            if (connections[i][0] === connector || connections[i][1] === connector) {
+              connections.splice(i, 1);
+            }
           }
-        }
-        drawLines();
+          drawLines();
+        });
+
+        node.appendChild(connector);
       });
-      node.appendChild(connector);
 
       const delBtn = document.createElement("div");
       delBtn.className = "delete-btn";
@@ -166,7 +190,6 @@
         e.stopPropagation();
         const index = nodes.indexOf(node);
         if (index !== -1) nodes.splice(index, 1);
-        // Remove related connections
         for (let i = connections.length - 1; i >= 0; i--) {
           if (connections[i][0].parentNode === node || connections[i][1].parentNode === node) {
             connections.splice(i, 1);
@@ -255,11 +278,13 @@
 
       document.addEventListener("touchend", () => isDragging = false);
 
-      el.querySelector(".connector").addEventListener("touchstart", (e) => {
-        e.stopPropagation();
-        startConnector = e.target;
-        draggingLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        canvas.appendChild(draggingLine);
+      el.querySelectorAll(".connector").forEach(conn => {
+        conn.addEventListener("touchstart", (e) => {
+          e.stopPropagation();
+          startConnector = e.target;
+          draggingLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          canvas.appendChild(draggingLine);
+        });
       });
     }
 

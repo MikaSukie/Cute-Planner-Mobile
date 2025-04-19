@@ -9,7 +9,7 @@
     body {
       margin: 0;
       font-family: 'Arial', sans-serif;
-      background: #10101a;
+      background: #0f0f1f;
       color: white;
       overflow-x: auto;
       overscroll-behavior: contain;
@@ -22,7 +22,7 @@
       width: 100%;
       display: flex;
       justify-content: space-around;
-      background: #1f1f2e;
+      background: #1a1a2f;
       padding: 10px;
       z-index: 100;
     }
@@ -37,16 +37,17 @@
 
     .node {
       position: absolute;
-      background: #2c2c40;
+      background: #2e2e4f;
       border-radius: 12px;
       padding: 12px;
       min-width: 120px;
-      max-width: 200px;
-      box-shadow: 0 0 8px #8884ff;
+      max-width: 300px;
+      box-shadow: 0 0 12px rgba(200, 150, 255, 0.6);
       color: white;
-      cursor: move;
       user-select: none;
       overflow-wrap: break-word;
+      resize: none;
+      touch-action: none;
     }
 
     .content {
@@ -55,19 +56,58 @@
 
     .connector {
       position: absolute;
-      width: 12px;
-      height: 12px;
-      background: #ff44ff;
+      width: 18px;
+      height: 18px;
+      background: #ff66cc;
+      border: 2px solid white;
       border-radius: 9999px;
       top: 50%;
-      right: -6px;
+      right: -8px;
       transform: translateY(-50%);
+      z-index: 2;
+      contenteditable: false;
+      transition: box-shadow 0.3s ease;
     }
+
+    .connector:active {
+      box-shadow: 0 0 12px 3px #ff66cc;
+    }
+
+    .delete-btn {
+      position: absolute;
+      top: -12px;
+      right: -12px;
+      background: #ff4444;
+      border-radius: 9999px;
+      color: white;
+      font-weight: bold;
+      font-size: 14px;
+      padding: 6px 10px;
+      z-index: 2;
+      touch-action: none;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+
+    .drag-point {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      background: #ffaadd;
+      border-radius: 9999px;
+      z-index: 3;
+      touch-action: none;
+    }
+
+    .drag-top-left    { top: -7px;  left: -7px; }
+    .drag-top-right   { top: -7px;  right: -7px; }
+    .drag-bottom-left { bottom: -7px; left: -7px; }
+    .drag-bottom-right{ bottom: -7px; right: -7px; }
 
     svg path {
       stroke: rgba(255, 255, 255, 0.4);
       stroke-width: 3;
       fill: none;
+      transition: d 0.2s ease;
     }
   </style>
 </head>
@@ -78,7 +118,7 @@
   <div class="toolbar">
     <button id="addNode" class="bg-pink-500 text-white">➕ Add</button>
     <button id="exportBtn" class="bg-green-500 text-white">⬇️ Save</button>
-    <button id="importBtn" class="bg-yellow-500 text-black">⬆️ Load</button>
+    <button id="importBtn" class="bg-yellow-400 text-black">⬆️ Load</button>
     <input type="file" id="importInput" hidden />
   </div>
 
@@ -89,17 +129,61 @@
     const connections = [];
     let draggingLine = null, startConnector = null;
 
-    function createNode(content = "New Node", top = 80, left = 80) {
+    function createNode(content = "New Node", top = 80, left = 80, width = 160, height = 100) {
       const node = document.createElement("div");
       node.className = "node";
       node.style.top = top + "px";
       node.style.left = left + "px";
-      node.contentEditable = true;
-      node.innerText = content;
+      node.style.width = width + "px";
+      node.style.height = height + "px";
+
+      const contentDiv = document.createElement("div");
+      contentDiv.className = "content";
+      contentDiv.contentEditable = true;
+      contentDiv.innerText = content;
+      node.appendChild(contentDiv);
 
       const connector = document.createElement("div");
       connector.className = "connector";
+      connector.setAttribute("contenteditable", "false");
+      connector.addEventListener("click", (e) => {
+        e.stopPropagation();
+        // Delete connections where this connector is involved
+        for (let i = connections.length - 1; i >= 0; i--) {
+          if (connections[i][0] === connector || connections[i][1] === connector) {
+            connections.splice(i, 1);
+          }
+        }
+        drawLines();
+      });
       node.appendChild(connector);
+
+      const delBtn = document.createElement("div");
+      delBtn.className = "delete-btn";
+      delBtn.innerText = "X";
+      delBtn.setAttribute("contenteditable", "false");
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const index = nodes.indexOf(node);
+        if (index !== -1) nodes.splice(index, 1);
+        // Remove related connections
+        for (let i = connections.length - 1; i >= 0; i--) {
+          if (connections[i][0].parentNode === node || connections[i][1].parentNode === node) {
+            connections.splice(i, 1);
+          }
+        }
+        node.remove();
+        drawLines();
+      });
+      node.appendChild(delBtn);
+
+      ["top-left", "top-right", "bottom-left", "bottom-right"].forEach(pos => {
+        const dot = document.createElement("div");
+        dot.className = `drag-point drag-${pos}`;
+        dot.setAttribute("contenteditable", "false");
+        addResizeTouch(dot, node, pos);
+        node.appendChild(dot);
+      });
 
       nodeContainer.appendChild(node);
       nodes.push(node);
@@ -107,9 +191,51 @@
       return node;
     }
 
+    function addResizeTouch(dot, node, pos) {
+      let startX, startY, startWidth, startHeight, startLeft, startTop;
+
+      dot.addEventListener("touchstart", e => {
+        e.stopPropagation();
+        const touch = e.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        startWidth = node.offsetWidth;
+        startHeight = node.offsetHeight;
+        startLeft = node.offsetLeft;
+        startTop = node.offsetTop;
+      });
+
+      dot.addEventListener("touchmove", e => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        let dx = touch.clientX - startX;
+        let dy = touch.clientY - startY;
+
+        if (pos.includes("left")) {
+          node.style.width = Math.max(100, startWidth - dx) + "px";
+          node.style.left = startLeft + dx + "px";
+        }
+        if (pos.includes("right")) {
+          node.style.width = Math.max(100, startWidth + dx) + "px";
+        }
+        if (pos.includes("top")) {
+          node.style.height = Math.max(60, startHeight - dy) + "px";
+          node.style.top = startTop + dy + "px";
+        }
+        if (pos.includes("bottom")) {
+          node.style.height = Math.max(60, startHeight + dy) + "px";
+        }
+
+        drawLines();
+      }, { passive: false });
+    }
+
     function makeDraggable(el) {
       let offsetX, offsetY, isDragging = false;
+
       el.addEventListener("touchstart", (e) => {
+        if (e.target.closest(".connector") || e.target.closest(".delete-btn") || e.target.closest(".drag-point")) return;
+
         const touch = e.touches[0];
         offsetX = touch.clientX - el.offsetLeft;
         offsetY = touch.clientY - el.offsetTop;
@@ -117,13 +243,15 @@
       });
 
       document.addEventListener("touchmove", (e) => {
-        if (isDragging) {
-          const touch = e.touches[0];
-          el.style.left = touch.clientX - offsetX + "px";
-          el.style.top = touch.clientY - offsetY + "px";
-          drawLines();
-        }
-      });
+        if (!isDragging) return;
+        const touch = e.touches[0];
+        const x = touch.clientX - offsetX;
+        const y = touch.clientY - offsetY;
+
+        el.style.left = x + "px";
+        el.style.top = y + "px";
+        drawLines();
+      }, { passive: false });
 
       document.addEventListener("touchend", () => isDragging = false);
 
@@ -139,7 +267,6 @@
       if (!draggingLine || !startConnector) return;
 
       e.preventDefault();
-
       const touch = e.touches[0];
       const r = startConnector.getBoundingClientRect();
       const x1 = r.left + 6 + window.scrollX;
@@ -149,7 +276,6 @@
 
       draggingLine.setAttribute("d", `M${x1},${y1} C${x1+50},${y1} ${x2-50},${y2} ${x2},${y2}`);
     }, { passive: false });
-
 
     document.addEventListener("touchend", (e) => {
       if (!draggingLine || !startConnector) return;
@@ -170,7 +296,6 @@
       connections.forEach(([a, b]) => {
         const ra = a.getBoundingClientRect();
         const rb = b.getBoundingClientRect();
-
         const x1 = ra.left + 6 + window.scrollX;
         const y1 = ra.top + 6 + window.scrollY;
         const x2 = rb.left + 6 + window.scrollX;
@@ -181,7 +306,6 @@
         canvas.appendChild(path);
       });
     }
-
 
     function updateCanvasSize() {
       let maxX = 0, maxY = 0;
@@ -195,13 +319,15 @@
       canvas.setAttribute("height", maxY + 200);
     }
 
-
     document.getElementById("addNode").onclick = () => createNode();
+
     document.getElementById("exportBtn").onclick = () => {
       const data = JSON.stringify(nodes.map(n => ({
-        text: n.innerText,
+        text: n.querySelector(".content").innerText,
         top: n.offsetTop,
-        left: n.offsetLeft
+        left: n.offsetLeft,
+        width: n.offsetWidth,
+        height: n.offsetHeight
       })));
       const blob = new Blob([data], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -224,7 +350,7 @@
         nodes.forEach(n => n.remove());
         nodes.length = 0;
         canvas.innerHTML = "";
-        data.forEach(n => createNode(n.text, n.top, n.left));
+        data.forEach(n => createNode(n.text, n.top, n.left, n.width, n.height));
       };
       reader.readAsText(file);
     });
